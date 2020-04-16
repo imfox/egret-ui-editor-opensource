@@ -2,17 +2,18 @@ import { IFileService, FileChangesEvent, FileOperation, IFileStat, IResolveFileR
 import { Event, Emitter } from '../../../base/common/event';
 import { IDisposable, dispose, toDisposable } from '../../../base/common/lifecycle';
 import URI from '../../../base/common/uri';
-import * as paths from 'path';
+import * as path from 'path';
 import * as fs from 'fs';
 import { coalesce } from '../../../base/common/arrays';
 import { isMacintosh, isWindows } from '../../../base/common/platform';
 import { normalizeNFC, endsWith } from '../../../base/common/strings';
-import { isEqualOrParent } from '../../../base/common/paths';
+import { isEqualOrParent, normalize } from '../../../base/common/paths';
 import { shell } from 'electron';
 import { Watcher as WatcherUnix } from './watcher/unix/watcher-unix';
 import { Watcher as WatcherWin32 } from './watcher/win32/watcher-win32';
 import { IWatcher } from './watcher/common';
 import { localize } from 'egret/base/localization/nls';
+import * as fileUtils from './fileUtils';
 
 
 /**
@@ -51,22 +52,15 @@ export class FileService implements IFileService {
 		let watcher: IWatcher = null;
 
 		const ignores: string[] = [];
-		ignores.push(paths.join(this.workspaceUri.fsPath, 'bin-debug'));
-		ignores.push(paths.join(this.workspaceUri.fsPath, 'bin-release'));
+		ignores.push(path.join(this.workspaceUri.fsPath, 'bin-debug'));
+		ignores.push(path.join(this.workspaceUri.fsPath, 'bin-release'));
 
-
-
-		if (false) {	//目前最好不要用nsfw的watcher，在mac上复制粘贴文件派发的内容有问题
-			// watcher = new WatcherNsfw(this.contextService, [], e => this._onFileChanges.fire(e));
-			// this.activeWorkspaceFileChangeWatcher = toDisposable(watcher.startup());
+		if (isWindows) {
+			watcher = new WatcherWin32(this.workspaceUri, ignores, e => this._onFileChanges.fire(e));
 		} else {
-			if (isWindows) {
-				watcher = new WatcherWin32(this.workspaceUri, ignores, e => this._onFileChanges.fire(e));
-			} else {
-				watcher = new WatcherUnix(this.workspaceUri, ignores, e => this._onFileChanges.fire(e));
-			}
-			this.activeWorkspaceFileChangeWatcher = toDisposable(watcher.startup());
+			watcher = new WatcherUnix(this.workspaceUri, ignores, e => this._onFileChanges.fire(e));
 		}
+		this.activeWorkspaceFileChangeWatcher = toDisposable(watcher.startup());
 	}
 
 	/**
@@ -145,96 +139,7 @@ export class FileService implements IFileService {
 	 * @param onSelected 每查到一个目标文件的时候调用
 	 */
 	public select(resource: URI, exts: string[], onSelected?: (stat: ISelectedStat) => void, ignores?: string[]): Promise<ISelectedStat[]> {
-		const newExts: string[] = [];
-		for (let i = 0; i < exts.length; i++) {
-			newExts.push(exts[i].toLocaleLowerCase());
-		}
-		return new Promise<ISelectedStat[]>((resolve, reject) => {
-			const selectedStats: ISelectedStat[] = [];
-			const onCompelte = () => {
-				resolve(selectedStats);
-			};
-			this.doSelect(resource.fsPath, newExts, onSelected, selectedStats, onCompelte,null,ignores);
-		});
-	}
-
-	private doSelect(path: string, exts: string[], onSelected: (stat: ISelectedStat) => void, fileStats: ISelectedStat[], onComplete: () => void, selectedMap?: { [path: string]: boolean }, ignores?: string[]): void {
-		if (!selectedMap) {
-			selectedMap = Object.create(null);
-		}
-
-		const baseName = paths.basename(path);
-		if(ignores.indexOf(baseName) != -1){
-			onComplete();
-			return;
-		}
-		fs.stat(path, (error, stat) => {
-			if (error) {
-				onComplete();
-				return;
-			}
-			if (!stat.isDirectory()) {
-				let ext = paths.extname(path);
-				if (!ext) {
-					ext = '';
-				}
-				ext = ext.toLocaleLowerCase();
-				if (exts.length > 0) {
-					if (exts.indexOf(ext) != -1) {
-						var selectedStat: ISelectedStat = {
-							resource: URI.file(path),
-							name: paths.basename(path),
-							mtime: stat.mtime.getTime(),
-							ext: ext
-						};
-						fileStats.push(selectedStat);
-						if (onSelected) {
-							onSelected(selectedStat);
-						}
-					}
-				} else {
-					var selectedStat: ISelectedStat = {
-						resource: URI.file(path),
-						name: paths.basename(path),
-						mtime: stat.mtime.getTime(),
-						ext: ext
-					};
-					fileStats.push(selectedStat);
-					if (onSelected) {
-						onSelected(selectedStat);
-					}
-				}
-				onComplete();
-				return;
-			}
-			if (selectedMap[path]) {
-				onComplete();
-				return;
-			}
-			selectedMap[path] = true;
-			this.readdir(path, (err, files) => {
-				if (files) {
-					const numSum = files.length;
-					let numFinish = 0;
-					const checkComplete = () => {
-						if (numFinish == numSum) {
-							onComplete();
-						}
-					};
-					const clb = () => {
-						numFinish++;
-						checkComplete();
-					};
-					for (let i = 0; i < files.length; i++) {
-						const file = files[i];
-						this.doSelect(paths.join(path, file), exts, onSelected, fileStats, clb, selectedMap,ignores);
-					}
-					checkComplete();
-				} else {
-					onComplete();
-				}
-			});
-		});
+		return fileUtils.select(resource, exts, onSelected, ignores);
 	}
 
 	/**
@@ -260,7 +165,7 @@ export class FileService implements IFileService {
 		} else {
 			resource = (<IFileStat>arg1).resource;
 		}
-		return paths.normalize(resource.fsPath);
+		return normalize(resource.fsPath);
 	}
 
 
@@ -288,7 +193,7 @@ export class FileService implements IFileService {
 			if (exist) {
 				createParentsPromise = Promise.resolve(void 0);
 			} else {
-				createParentsPromise = this.mkdirp(paths.dirname(absolutePath));
+				createParentsPromise = this.mkdirp(path.dirname(absolutePath));
 			}
 			return createParentsPromise.then(() => {
 				return this.doSetContentsAndResolve(resource, absolutePath, value);
@@ -298,7 +203,7 @@ export class FileService implements IFileService {
 
 	private doSetContentsAndResolve(resource: URI, absolutePath: string, value: string): Promise<IFileStat> {
 		const writeFile = new Promise((resolve, reject) => {
-			fs.writeFile(absolutePath, value, 'utf8', err => {
+			fs.writeFile(absolutePath, value, { encoding: 'utf8', mode: 0o666 }, err => {
 				if (err) {
 					reject(err);
 				} else {
@@ -313,19 +218,19 @@ export class FileService implements IFileService {
 
 	/**
 	 * 递归创建路径
-	 * @param path 
+	 * @param target 
 	 */
-	private mkdirp(path: string): Promise<boolean> {
+	private mkdirp(target: string): Promise<boolean> {
 		const mkdir = new Promise((resolve, reject) => {
-			fs.mkdir(path, error => {
+			fs.mkdir(target, error => {
 				if (error) {
 					if (error.code === 'EEXIST') {
-						fs.stat(path, (err, stat) => {
+						fs.stat(target, (err, stat) => {
 							if (stat) {
 								if (stat.isDirectory) {
 									resolve(true);
 								} else {
-									reject(localize('fileService.checkFile.pathExistAndIsFile', 'The {0} path already exists and is not a folder.', path));
+									reject(localize('fileService.checkFile.pathExistAndIsFile', 'The {0} path already exists and is not a folder.', target));
 								}
 							} else {
 								reject(err);
@@ -340,7 +245,7 @@ export class FileService implements IFileService {
 			});
 		});
 		// 遇到根路径就结束
-		if (path === paths.dirname(path)) {
+		if (target === path.dirname(target)) {
 			return Promise.resolve(true);
 		}
 		// 递归创建目录
@@ -348,7 +253,7 @@ export class FileService implements IFileService {
 			if (result) {
 				return true;
 			} else {
-				return this.mkdirp(paths.dirname(path));
+				return this.mkdirp(path.dirname(target));
 			}
 		});
 	}
@@ -426,14 +331,14 @@ export class FileService implements IFileService {
 				}
 				let deleteTargetPromise = Promise.resolve();
 				if (exists && !isCaseRename) {
-					if (isEqualOrParent(sourcePath, targetPath)) {
+					if (isEqualOrParent(normalize(sourcePath), normalize(targetPath))) {
 						reject(new Error(localize('fileService.doMoveOrCopyFile.noMoveOrCopyToParentDirectory', 'Unable to move or copy to replace its parent folder')));
 						return;
 					}
 					deleteTargetPromise = this.del(URI.file(targetPath), true);
 				}
 				deleteTargetPromise.then(() => {
-					this.mkdirp(paths.dirname(targetPath)).then(() => {
+					this.mkdirp(path.dirname(targetPath)).then(() => {
 						if (isSameFile) {
 							resolve(exists);
 						} else if (keepCopy) {
@@ -480,7 +385,7 @@ export class FileService implements IFileService {
 			}
 			copiedSources[source] = true; // 标记为已经复制过。
 			this.mkdirp(target).then(() => {
-				this.readdir(source, (err, files) => {
+				fileUtils.readdir(source, (err, files) => {
 					if (files) {
 						const numSum = files.length;
 						let numFinish = 0;
@@ -499,7 +404,7 @@ export class FileService implements IFileService {
 						};
 						for (let i = 0; i < files.length; i++) {
 							const file = files[i];
-							this.copy(paths.join(source, file), paths.join(target, file), clb, copiedSources);
+							this.copy(path.join(source, file), path.join(target, file), clb, copiedSources);
 						}
 						checkComplete(null);
 					} else {
@@ -563,41 +468,41 @@ export class FileService implements IFileService {
 			return callback(err);
 		});
 	}
-	private rmRecursive(path: string, callback: (error: Error) => void): void {
-		if (path === '\\' || path === '/') {
+	private rmRecursive(target: string, callback: (error: Error) => void): void {
+		if (target === '\\' || target === '/') {
 			return callback(new Error(localize('fileService.rmRecursive.cantDeleteDirectory', 'Unable to delete root directory')));
 		}
-		fs.exists(path, exists => {
+		fs.exists(target, exists => {
 			if (!exists) {
 				callback(null);
 			} else {
-				fs.lstat(path, (err, stat) => {
+				fs.lstat(target, (err, stat) => {
 					if (err || !stat) {
 						callback(err);
 					} else if (!stat.isDirectory() || stat.isSymbolicLink() /* !!! never recurse into links when deleting !!! */) {
 						const mode = stat.mode;
 						if (!(mode & 128)) { // 128 === 0200
-							fs.chmod(path, mode | 128, (err: Error) => { // 128 === 0200
+							fs.chmod(target, mode | 128, (err: Error) => { // 128 === 0200
 								if (err) {
 									callback(err);
 								} else {
-									fs.unlink(path, callback);
+									fs.unlink(target, callback);
 								}
 							});
 						} else {
-							fs.unlink(path, callback);
+							fs.unlink(target, callback);
 						}
 					} else {
-						this.readdir(path, (err, children) => {
+						fileUtils.readdir(target, (err, children) => {
 							if (err || !children) {
 								callback(err);
 							} else if (children.length === 0) {
-								fs.rmdir(path, callback);
+								fs.rmdir(target, callback);
 							} else {
 								let firstError: Error = null;
 								let childrenLeft = children.length;
 								children.forEach(child => {
-									this.rmRecursive(paths.join(path, child), (err: Error) => {
+									this.rmRecursive(path.join(target, child), (err: Error) => {
 										childrenLeft--;
 										if (err) {
 											firstError = firstError || err;
@@ -607,7 +512,7 @@ export class FileService implements IFileService {
 											if (firstError) {
 												callback(firstError);
 											} else {
-												fs.rmdir(path, callback);
+												fs.rmdir(target, callback);
 											}
 										}
 									});
@@ -620,20 +525,8 @@ export class FileService implements IFileService {
 		});
 	}
 
-	private readdir(path: string, callback: (error: Error, files: string[]) => void): void {
-		if (isMacintosh) {
-			return fs.readdir(path, (error, children) => {
-				if (error) {
-					return callback(error, null);
-				}
-				return callback(null, children.map(c => normalizeNFC(c)));
-			});
-		}
-		return fs.readdir(path, callback);
-	}
-
 	private doCopyFile(source: string, target: string, mode: number, callback: (error: Error) => void): void {
-		this.mkdirp(paths.dirname(target)).then(() => {
+		this.mkdirp(path.dirname(target)).then(() => {
 			const reader = fs.createReadStream(source);
 			const writer = fs.createWriteStream(target, { mode });
 			let finished = false;
@@ -712,7 +605,7 @@ export class FileService implements IFileService {
 	 * @param newName 文件名
 	 */
 	public rename(resource: URI, newName: string): Promise<IFileStat> {
-		const newPath = paths.join(paths.dirname(resource.fsPath), newName);
+		const newPath = path.join(path.dirname(resource.fsPath), newName);
 		return this.moveFile(resource, URI.file(newPath));
 	}
 	/**
@@ -787,7 +680,7 @@ export class StatResolver {
 		private mtime: number,
 		private size: number,
 	) {
-		this.name = paths.basename(resource.fsPath);
+		this.name = path.basename(resource.fsPath);
 	}
 
 	/**
@@ -841,7 +734,7 @@ export class StatResolver {
 			};
 
 			files.forEach((file) => {
-				const fileResource = URI.file(paths.join(absolutePath, file));
+				const fileResource = URI.file(path.join(absolutePath, file));
 				statLink(fileResource.fsPath).then(
 					({ isSymbolicLink, stat }) => {
 						const fileStat: fs.Stats = stat;
@@ -859,7 +752,7 @@ export class StatResolver {
 						if (childStat.isDirectory) {
 							if (files.length === 1) {
 								resolveFolderChildren = true;
-							} else if (absoluteTargetPaths && absoluteTargetPaths.some(targetPath => isEqualOrParent(targetPath, fileResource.fsPath))) {
+							} else if (absoluteTargetPaths && absoluteTargetPaths.some(targetPath => isEqualOrParent(normalize(targetPath), normalize(fileResource.fsPath)))) {
 								resolveFolderChildren = true;
 							}
 						}

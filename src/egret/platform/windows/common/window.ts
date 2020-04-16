@@ -1,6 +1,7 @@
-import { ParsedArgs } from '../../environment/common/environment';
 import { createDecorator } from '../../instantiation/common/instantiation';
 import { INativeOpenDialogOptions, MessageBoxOptions, IMessageBoxResult } from './windows';
+import { Event } from 'vs/base/common/event';
+import { ParsedArgs } from 'egret/platform/environment/common/args';
 
 
 /**
@@ -27,6 +28,8 @@ export interface IWindowConfiguration extends ParsedArgs {
 	 * 打开的文件夹路径
 	 */
 	folderPath: string;
+	/** 要打开的文件 */
+	file?: string;
 }
 
 /**
@@ -46,10 +49,19 @@ export interface IBrowserWindowEx {
 	 */
 	readonly config: IWindowConfiguration;
 	/**
+	 * 窗体关闭事件
+	 */
+	readonly onClosed: Event<void>;
+	/**
 	 * 打开窗体
 	 * @param config 窗体的打开配置
 	 */
 	load(config: IWindowConfiguration): void;
+	isFocus(): boolean;
+	focus(): void;
+	readonly isReady: boolean;
+	ready(): Promise<IBrowserWindowEx>;
+	setReady(): void;
 	/**
 	 * 重新加载
 	 */
@@ -64,6 +76,7 @@ export interface IBrowserWindowEx {
 	 * @param args 任意数据
 	 */
 	send(channel: string, ...args: any[]): void;
+	sendWhenReady(channel: string, ...args: any[]): void;
 }
 
 export const IWindowClientService = createDecorator<IWindowClientService>('windowClientService');

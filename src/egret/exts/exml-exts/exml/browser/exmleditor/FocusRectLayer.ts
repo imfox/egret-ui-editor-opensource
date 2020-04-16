@@ -775,7 +775,7 @@ export class FocusRectLayer extends EventDispatcher implements IAbosrbLineProvid
 		this.targetStartPos.y = event.clientY - this.egretContentHost.getTarget().y;
 		this.mousePos.x = event.clientX;
 		this.mousePos.y = event.clientY;
-		this.stopEase();
+		// this.stopEase();
 		this.moving = true;
 		this.updateCursor();
 	}
@@ -799,7 +799,7 @@ export class FocusRectLayer extends EventDispatcher implements IAbosrbLineProvid
 	private stopMove(event: MouseEvent): void {
 		event.preventDefault();
 		event.stopPropagation();
-		this.startEase();
+		// this.startEase();
 		this.moving = false;
 		this.updateCursor();
 	}
@@ -830,7 +830,7 @@ export class FocusRectLayer extends EventDispatcher implements IAbosrbLineProvid
 		this.setViewTo({ x: this.movePoint.x, y: this.movePoint.y, scale: targetScale }, true, 0.1)
 	}
 	private gesturePan_handler(event: MouseWheelEvent): void {
-		this.stopEase();
+		// this.stopEase();
 		var offsetX = event.deltaX / 2;
 		var offsetY = event.deltaY / 2;
 		this.movePoint.x -= offsetX;
@@ -859,51 +859,51 @@ export class FocusRectLayer extends EventDispatcher implements IAbosrbLineProvid
 		this.setViewTo({ x: Math.round(this.movePoint.x), y: Math.round(this.movePoint.y), scale: targetScale }, true, 0.1)
 	}
 
-	private easeTimeoutFlag = null
-	private easeIntervalFlag = null
-	private startEase(): void {
-		if (this.easeIntervalFlag) {
-			clearInterval(this.easeIntervalFlag);
-			this.easeIntervalFlag = null;
-		}
-		if (this.easeTimeoutFlag) {
-			clearTimeout(this.easeTimeoutFlag);
-			this.easeTimeoutFlag = null;
-		}
-		this.easeTimeoutFlag = setTimeout(() => {
-			this.easeIntervalFlag = setInterval(() => this.doEase(), 1000 / 60);
-		}, 1000 / 60);
-	}
-	private stopEase(): void {
-		if (this.easeIntervalFlag) {
-			clearInterval(this.easeIntervalFlag);
-			this.easeIntervalFlag = null;
-		}
-		if (this.easeTimeoutFlag) {
-			clearTimeout(this.easeTimeoutFlag);
-			this.easeTimeoutFlag = null;
-		}
-	}
+	// private easeTimeoutFlag = null
+	// private easeIntervalFlag = null
+	// private startEase(): void {
+	// 	if (this.easeIntervalFlag) {
+	// 		clearInterval(this.easeIntervalFlag);
+	// 		this.easeIntervalFlag = null;
+	// 	}
+	// 	if (this.easeTimeoutFlag) {
+	// 		clearTimeout(this.easeTimeoutFlag);
+	// 		this.easeTimeoutFlag = null;
+	// 	}
+	// 	this.easeTimeoutFlag = setTimeout(() => {
+	// 		this.easeIntervalFlag = setInterval(() => this.doEase(), 1000 / 60);
+	// 	}, 1000 / 60);
+	// }
+	// private stopEase(): void {
+	// 	if (this.easeIntervalFlag) {
+	// 		clearInterval(this.easeIntervalFlag);
+	// 		this.easeIntervalFlag = null;
+	// 	}
+	// 	if (this.easeTimeoutFlag) {
+	// 		clearTimeout(this.easeTimeoutFlag);
+	// 		this.easeTimeoutFlag = null;
+	// 	}
+	// }
 
-	private doEase(): void {
-		if (this.speed.x == 0 && this.speed.y == 0) {
-			return;
-		}
-		this.speed.x = this.speed.x / 1.10;
-		this.speed.y = this.speed.y / 1.10;
-		if (this.speed.y <= 0.1 && this.speed.y >= -0.1) {
-			this.speed.y = 0;
-		}
-		if (this.speed.x <= 0.1 && this.speed.x >= -0.1) {
-			this.speed.x = 0;
-		}
-		this.movePoint.x += this.speed.x;
-		this.movePoint.y += this.speed.y;
-		this.updateTargetPos();
-		if (this.speed.x == 0 && this.speed.y == 0) {
-			this.stopEase();
-		}
-	}
+	// private doEase(): void {
+	// 	if (this.speed.x == 0 && this.speed.y == 0) {
+	// 		return;
+	// 	}
+	// 	this.speed.x = this.speed.x / 1.10;
+	// 	this.speed.y = this.speed.y / 1.10;
+	// 	if (this.speed.y <= 0.1 && this.speed.y >= -0.1) {
+	// 		this.speed.y = 0;
+	// 	}
+	// 	if (this.speed.x <= 0.1 && this.speed.x >= -0.1) {
+	// 		this.speed.x = 0;
+	// 	}
+	// 	this.movePoint.x += this.speed.x;
+	// 	this.movePoint.y += this.speed.y;
+	// 	this.updateTargetPos();
+	// 	if (this.speed.x == 0 && this.speed.y == 0) {
+	// 		this.stopEase();
+	// 	}
+	// }
 
 	private updateCursor(): void {
 		if (this.dragEnabled || this.moving) {
@@ -961,6 +961,9 @@ export class FocusRectLayer extends EventDispatcher implements IAbosrbLineProvid
 	/**刷新视图代理 */
 	private updateViewAdapter(): void {
 		this._scale = this.egretContentHost.getTarget().scaleX;
+		if (!Number.isFinite(this._scale)) {
+			this._scale = 1;
+		}
 		this._onScaleChanged.fire(this._scale);
 
 		let m: Matrix = this.egretContentHost.getTarget().matrix;
@@ -2023,15 +2026,37 @@ export class FocusRectExt extends FocusRect implements IP9TTarget {
 		this.rectRender.visible = targetVisible;
 	}
 
+	private getDisplayObjectSize(obj: egret.DisplayObject): { width: number; height: number } {
+		let width = obj.width;
+		if (!Number.isFinite(width)) {
+			if (this.container) {
+				width = this.container.clientWidth;
+			} else {
+				width = 0;
+			}
+		}
+		let height = obj.height;
+		if (!Number.isFinite(height)) {
+			if (this.container) {
+				height = this.container.clientHeight;
+			} else {
+				height = 0;
+			}
+		}
+
+		return { width: width, height: height };
+	}
+
 	protected doRefreshRectRender(): void {
 		if (!this.ownerLayer) {
 			return
 		}
 		let egretObj = this.targetNode.getInstance() as egret.DisplayObject;
-		var p1 = new Point(0, 0);
-		var p2 = new Point(egretObj.width, 0);
-		var p3 = new Point(egretObj.width, egretObj.height);
-		var p4 = new Point(0, egretObj.height);
+		let objSize = this.getDisplayObjectSize(egretObj);
+		let p1 = new Point(0, 0);
+		let p2 = new Point(objSize.width, 0);
+		let p3 = new Point(objSize.width, objSize.height);
+		let p4 = new Point(0, objSize.height);
 
 		let targetGlobalMatix: Matrix = this.getMatrix();
 		targetGlobalMatix.concat(MatrixUtil.getMatrixToWindow(this.container));

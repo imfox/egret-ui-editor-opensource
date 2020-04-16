@@ -289,9 +289,13 @@ export class NewExmlPanel extends InnerBtnWindow {
 		if (!this.wingProperty.design) {
 			this.wingProperty.design = {};
 		}
-		this.wingProperty.design.height = height;
-		this.wingProperty.design.width = width;
-		writeWingProperty(this.wingProperty, path.join(this.projectService.projectModel.project.fsPath, path.sep, 'wingProperties.json'));
+		if (this.wingProperty.design.height !== height ||
+			this.wingProperty.design.width !== width) {
+			this.wingProperty.design.height = height;
+			this.wingProperty.design.width = width;
+
+			writeWingProperty(this.wingProperty, path.join(this.projectService.projectModel.project.fsPath, path.sep, 'wingProperties.json'));
+		}
 	}
 
 	/**
@@ -307,7 +311,8 @@ export class NewExmlPanel extends InnerBtnWindow {
 	 * 弹出主机组件选择框
 	 */
 	private comHandle = () => {
-		const exmlComponentPanel = this.instantiationService.createInstance(ExmlComponentPanel, this.euiHost);
+		const defaultHostName = this.comContainer.textInput;
+		const exmlComponentPanel = this.instantiationService.createInstance(ExmlComponentPanel, this.euiHost, defaultHostName);
 		exmlComponentPanel.confirm = (v) => {
 			this.stat = v;
 			this.comContainer.textInput = v.data.className || '';

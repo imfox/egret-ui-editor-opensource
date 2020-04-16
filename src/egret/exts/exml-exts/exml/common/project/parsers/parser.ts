@@ -2,11 +2,15 @@ import { Event } from 'egret/base/common/event';
 import { IInstantiationService } from 'egret/platform/instantiation/common/instantiation';
 import { ClassNode } from '../syntaxNodes';
 import { ParseCenterProcess } from './process/parseCenterProcess';
+import { IDisposable } from 'egret/base/common/lifecycle';
+
+export type ClassChangedType = 'ts' | 'exml' | 'mix';
 
 /**
  * 类改变事件
  */
 export class ClassChangedEvent {
+	type: ClassChangedType;
 	/**
 	 * 类字典
 	 */
@@ -25,7 +29,7 @@ export class ClassChangedEvent {
 /**
  * 解析中心接口
  */
-export interface IParseCenter {
+export interface IParseCenter extends IDisposable {
 	/**
 	 * 初始化完成
 	 */

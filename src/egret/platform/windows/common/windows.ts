@@ -1,7 +1,7 @@
-import { ParsedArgs } from '../../environment/common/environment';
 import { BrowserWindow, OpenDialogOptions } from 'electron';
 import { createDecorator } from '../../instantiation/common/instantiation';
 import { IBrowserWindowEx } from './window';
+import { ParsedArgs } from 'egret/platform/environment/common/args';
 
 /**
  * 窗体的打开参数
@@ -9,8 +9,10 @@ import { IBrowserWindowEx } from './window';
 export interface IOpenBrowserWindowOptions {
 	/** 命令 */
 	cli?: ParsedArgs;
-	/** 要打开的路径 */
+	/** 要打开的项目路径 */
 	folderPath?: string;
+	/** 要打开的文件，该值只从eui命令行获取 */
+	file?: string;
 }
 
 /**
@@ -115,11 +117,11 @@ export interface IWindowsMainService {
 	/**
 	 * 打开主窗体
 	 */
-	open(options:IOpenBrowserWindowOptions): void;
+	open(options:IOpenBrowserWindowOptions, fromWindowId?: number): void;
 	/**
 	 * 退出主窗体
 	 */
-	quit(): void;
+	quit(): Promise<void>;
 	/**
 	 * 重新加载当前激活的窗体
 	 */

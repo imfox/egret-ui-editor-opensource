@@ -71,8 +71,9 @@ export class ItemsContainer implements IDisposable {
 				this.tree.refresh(item);
 			}));
 		});
-		this.tree.setInput(input);
-		this.updateSelectedItem();
+		this.tree.setInput(input).then(() => {
+			this.updateSelectedItem();
+		});
 	}
 
 	private updateSelectedItem(): void {
@@ -404,7 +405,7 @@ class TweenItemController extends treeDefaults.DefaultController {
 		@IInstantiationService private instantiationService: IInstantiationService,
 		@IAnimationService private animationService: IAnimationService
 	) {
-		super();
+		super({ clickBehavior: treeDefaults.ClickBehavior.ON_MOUSE_UP, keyboardSupport: true, openMode: treeDefaults.OpenMode.SINGLE_CLICK });
 		this.actionProvider.onEnableChanged((obj) => {
 			this.setContextMenuEnable(obj.enable, obj.id);
 		});
@@ -515,7 +516,9 @@ class TweenItemController extends treeDefaults.DefaultController {
 		}
 
 		setTimeout(() => {
-			this.createContextMenu().popup(remote.getCurrentWindow());
+			this.createContextMenu().popup({
+				window: remote.getCurrentWindow()
+			});
 		}, 10);
 		return true;
 	}

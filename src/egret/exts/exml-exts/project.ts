@@ -53,7 +53,7 @@ export interface IEgretProjectService {
 	/**
 	 * 项目配置文件改变
 	 */
-	onProjectConfigChanged:Event<void>;
+	onProjectConfigChanged: Event<void>;
 
 	/**
 	 * 确保已经刷新过了
@@ -90,7 +90,7 @@ class EgretProjectService implements IEgretProjectService {
 	private _theme: ITheme;
 
 	private _onResConfigChanged: Emitter<void>;
-	private _onProjectConfigChanged:Emitter<void>;
+	private _onProjectConfigChanged: Emitter<void>;
 
 	constructor(
 		@IInstantiationService private instantiationService: IInstantiationService,
@@ -113,7 +113,7 @@ class EgretProjectService implements IEgretProjectService {
 	/**
 	 * 项目配置文件改变
 	 */
-	public get onProjectConfigChanged():Event<void>{
+	public get onProjectConfigChanged(): Event<void> {
 		return this._onProjectConfigChanged.event;
 	}
 
@@ -146,18 +146,26 @@ class EgretProjectService implements IEgretProjectService {
 			}
 		}
 		if (refreshProj) {
-			this.loaded = false;
-			this.loadPromise = this.initProject().then(() => {
-				this.loaded = null;
-				this.loaded = true;
-				const editors = this.workbenchEditorService.getOpenEditors();
-				editors.forEach(editor => {
-					if ('refreshInput' in editor) {
-						(editor as any)['refreshInput']();
-					}
-				});
+			let engineChanged: Promise<boolean> = Promise.resolve(true);
+			if (this._exmlConfig) {
+				engineChanged = this.exmlConfig.engineChanged();
+			}
+			engineChanged.then((changed) => {
+				if (changed) {
+					this.loaded = false;
+					this.loadPromise = this.initProject().then(() => {
+						this.loadPromise = null;
+						this.loaded = true;
+						const editors = this.workbenchEditorService.getOpenEditors();
+						editors.forEach(editor => {
+							if ('refreshInput' in editor) {
+								(editor as any)['refreshInput']();
+							}
+						});
+					});
+				}
+				this._onProjectConfigChanged.fire();
 			});
-			this._onProjectConfigChanged.fire();
 		} else if (refreshTheme) {
 			if (this._theme) {
 				this._theme.reload();
@@ -229,6 +237,9 @@ class EgretProjectService implements IEgretProjectService {
 	 */
 	private initProject(): Promise<void> {
 		this._projectModel = null;
+		if (this._exmlConfig) {
+			this._exmlConfig.dispose();
+		}
 		this._exmlConfig = null;
 		this._theme = null;
 		this._exmlModelCreater = null;

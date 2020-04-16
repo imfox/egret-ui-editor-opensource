@@ -208,13 +208,21 @@ export class ExmlView implements IExmlView {
 		if (this.exmlEditor.focusRectLayer) {
 			let screenWidth = 0;
 			let screenHeight = 0;
-			let screenScale = 0;
+			let screenScale = 1;
 			let fitContent = false;
 			if (PreviewConfig) {
 				screenWidth = PreviewConfig.screenWidth;
 				screenHeight = PreviewConfig.screenHeight;
 				screenScale = PreviewConfig.screenScale;
 				fitContent = PreviewConfig.fitContent;
+			} else {
+			}
+			if (screenWidth <= 0 || screenHeight <= 0) {
+				if (this.container) {
+					screenWidth = this.container.clientWidth;
+					screenHeight = this.container.clientHeight;
+					screenScale = 1;
+				}
 			}
 			setTimeout(() => {
 				const stageInfo = this.egretProjectService.projectModel.getStageInfo();
@@ -405,7 +413,9 @@ export class ExmlView implements IExmlView {
 				this.egretProjectService.exmlConfig.ensureLoaded().then(() => {
 					const exmlConfig = this.egretProjectService.exmlConfig as EUIExmlConfig;
 					const runtimeUrl = exmlConfig.getRuntimeUrlDirect();
-					this._runtime.initRuntime(runtimeUrl);
+					if (this._runtime) {
+						this._runtime.initRuntime(runtimeUrl);
+					}
 				});
 			}
 		});
@@ -882,7 +892,11 @@ export class ExmlView implements IExmlView {
 			}
 		}
 		this.initContextMenuDynamic(displayX, displayY);
-		this.createContextMenu().popup(remote.getCurrentWindow(), { x: displayX, y: displayY });
+		this.createContextMenu().popup({
+			window: remote.getCurrentWindow(),
+			x: displayX,
+			y: displayY
+		});
 	}
 
 	/**

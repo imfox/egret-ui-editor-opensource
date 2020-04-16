@@ -8,14 +8,76 @@ import { BrowserWindowEx } from './browserWindowEx';
 import { dialog, ipcMain as ipc } from 'electron';
 import { isMacintosh } from 'egret/base/common/platform';
 import { normalizeNFC } from 'egret/base/common/strings';
-
 import * as fs from 'fs';
+import * as path from 'path';
 import { IStateService } from '../../state/common/state';
-import { dirname } from '../../../base/common/paths';
+import { dirname, isEqual } from '../../../base/common/paths';
 import { localize } from '../../../base/localization/nls';
-import { debug } from 'util';
+import { ResdepotWindow } from './resdepotWindow';
+import URI from 'egret/base/common/uri';
+import { getEUIProject } from 'egret/platform/environment/node/environmentService';
 
 const LAST_OPNED_FOLDER: string = 'lastOpenedFolder';
+
+class WindowInstance {
+	public openedFolderUri: URI | null;
+	public resWindow?: IBrowserWindowEx;
+	/**
+	 *
+	 */
+	constructor(public mainWindow: IBrowserWindowEx,
+		openedFolderUri: URI | null,
+		@IInstantiationService private instantiationService: IInstantiationService,
+		@ILifecycleService private lifecycleService: ILifecycleService, ) {
+		this.openedFolderUri = openedFolderUri;
+	}
+
+	public getWindow(id: number): IBrowserWindowEx | null {
+		if (this.mainWindow.id === id) {
+			return this.mainWindow;
+		}
+		if (this.resWindow && this.resWindow.id === id) {
+			return this.resWindow;
+		}
+		return null;
+	}
+
+	public openResWindow(configuration: IWindowConfiguration): void {
+		if (this.resWindow) {
+			this.resWindow.send('egret:openResEditor', configuration.file);
+			this.resWindow.focus();
+			return;
+		}
+		this.resWindow = this.instantiationService.createInstance(ResdepotWindow, 'res');
+		this.resWindow.load(configuration);
+		this.lifecycleService.registerWindow(this.resWindow);
+	}
+
+	public async closeRes(): Promise<boolean> {
+		if (this.resWindow) {
+			const closed = await this.closeWindow(this.resWindow);
+			if (closed) {
+				this.resWindow = null;
+			}
+			return closed;
+		}
+		return Promise.resolve(true);
+	}
+
+	private closeWindow(window: IBrowserWindowEx): Promise<boolean> {
+		return this.lifecycleService.unload(window, false).then(veto => {
+			if (!veto) {
+				window.close();
+			}
+			return !veto;
+		});
+	}
+
+	public async close(): Promise<boolean> {
+		await this.closeRes();
+		return await this.closeWindow(this.mainWindow);
+	}
+}
 
 /**
  * 窗体管理器
@@ -25,6 +87,7 @@ export class WindowsMainService implements IWindowsMainService {
 	_serviceBrand: any;
 
 	private dialogs: Dialogs;
+	private openedWindows: WindowInstance[] = [];
 	constructor(
 		private readonly machineId: string,
 		@IInstantiationService private instantiationService: IInstantiationService,
@@ -33,27 +96,19 @@ export class WindowsMainService implements IWindowsMainService {
 		@IStateService private stateService: IStateService
 	) {
 		this.dialogs = new Dialogs(environmentService, stateService, this);
-		const lastOpenedFolder: string = this.stateService.getItem<string>(LAST_OPNED_FOLDER, '');
-		let folder:string = environmentService.args['folder'];
-		if(folder){
-			if(
-				(folder.charAt(0) == '\'' || folder.charAt(0) == '"') && 
-				(folder.charAt(folder.length-1) == '\'' || folder.charAt(folder.length-1) == '"') 
-			){
-				folder = folder.slice(1,folder.length-1);
-			}
-		}
-		let targetToOpen:string = lastOpenedFolder;
-		if(folder){
-			targetToOpen = folder;
-		}
-		this.openInBrowserWindow({
-			cli: this.environmentService.args,
-			folderPath: targetToOpen
-		});
+		this.openMainWindow(this.getWindowOptions());
 		this.registerListeners();
 	}
 	private registerListeners(): void {
+		// React to workbench ready events from windows
+		ipc.on('egret:workbenchReady', (event: Event, windowId: number) => {
+			const win = this.getWindowById(windowId);
+			if (win) {
+				win.setReady();
+				// console.log('window workbech ready', win.isReady, windowId);
+			}
+		});
+		this.lifecycleService.onWindowClosed(this.onWindowClosed, this);
 		ipc.on('egret:showMessageBox', (event, data: { options: MessageBoxOptions, replyChannel: string }) => {
 			const window = this.getWindowById(data.options.windowId) || this.getFocusedWindow();
 			this.showMessageBox(data.options).then(result => {
@@ -63,62 +118,148 @@ export class WindowsMainService implements IWindowsMainService {
 		ipc.on('egret:pickFolderAndOpen', (event, options: INativeOpenDialogOptions) => {
 			this.pickFolderAndOpen(options);
 		});
+		ipc.on('egret:openResWindow', (event, data: { windowId: number, folderPath: string, file: string }) => {
+			const options: IOpenBrowserWindowOptions = {
+				cli: this.environmentService.args,
+				folderPath: data.folderPath,
+				file: data.file
+			};
+			this.openResWindow(data.windowId, options);
+		});
 	}
+
+	private getWindowOptions(): IOpenBrowserWindowOptions {
+		const lastOpenedFolder: string = this.stateService.getItem<string>(LAST_OPNED_FOLDER, '');
+		const euiProject = getEUIProject(this.environmentService.args);
+		if (!euiProject.folderPath) {
+			euiProject.folderPath = lastOpenedFolder;
+		}
+		return {
+			cli: this.environmentService.args,
+			folderPath: euiProject.folderPath,
+			file: euiProject.file
+		};
+	}
+
 
 	/**
 	 * 打开
 	 */
-	public open(options: IOpenBrowserWindowOptions): void {
-		let closedPromise = Promise.resolve(true);
-		if (this.mainWindow) {
-			closedPromise = this.lifecycleService.unload(this.mainWindow).then(veto => {
-				return !veto;
-			});
-		}
-		closedPromise.then(closed => {
-			if (closed) {
-				this.mainWindow.close();
-				this.mainWindow = null;
-				this.stateService.setItem(LAST_OPNED_FOLDER, options.folderPath ? options.folderPath : '');
-				this.openInBrowserWindow(options);
+	public open(options: IOpenBrowserWindowOptions, fromMainWindowId?: number): void {
+		if (!options.folderPath) {
+			const emptyInstance = this.getEmptyWindowInstance();
+			if (emptyInstance) {
+				emptyInstance.mainWindow.focus();
+			} else {
+				this.openMainWindow(options);
 			}
-		});
+		} else {
+			const useExistInstance = this.getWindowInstance(URI.file(options.folderPath));
+			if (useExistInstance) {
+				if (options.file) {
+					console.log('open file', useExistInstance.mainWindow.isReady,  options.file);
+					useExistInstance.mainWindow.sendWhenReady('egret:openFile', options.file);
+				}
+				useExistInstance.mainWindow.focus();
+			} else {
+				let targetIntance: WindowInstance | null = null;
+				if (typeof fromMainWindowId === 'number') {
+					targetIntance = this.getWindowInstance(fromMainWindowId);
+				} else {
+					targetIntance = this.getEmptyWindowInstance();
+				}
+				if (targetIntance) {
+					let closedPromise = this.lifecycleService.unload(targetIntance.mainWindow).then(veto => {
+						return !veto;
+					});
+					closedPromise.then(unloaded => {
+						if (unloaded) {
+							this.stateService.setItem(LAST_OPNED_FOLDER, options.folderPath);
+							const configuration: IWindowConfiguration = this.getConfiguration(options);
+							targetIntance.mainWindow.load(configuration);
+							targetIntance.openedFolderUri = URI.file(options.folderPath);
+						}
+					});
+				} else {
+					this.openMainWindow(options);
+				}
+			}
+		}
 	}
 	/**
 	 * 重新加载当前激活的窗体
 	 */
-	public reload():void{
+	public reload(): void {
 		let refreshPromise = Promise.resolve(true);
 		const focusedWindow = this.getFocusedWindow();
-		if(focusedWindow){
-			refreshPromise = this.lifecycleService.unload(this.mainWindow,true).then(veto => {
+		if (focusedWindow) {
+			refreshPromise = this.lifecycleService.unload(focusedWindow, true).then(veto => {
 				return !veto;
 			});
-			refreshPromise.then(refresh => {
-				if (refresh) {
+			refreshPromise.then(unloaded => {
+				if (unloaded) {
 					focusedWindow.reload();
 				}
 			});
 		}
 	}
 
-	private mainWindow: IBrowserWindowEx;
-	private openInBrowserWindow(options: IOpenBrowserWindowOptions): void {
+	private openMainWindow(options: IOpenBrowserWindowOptions): void {
+		this.stateService.setItem(LAST_OPNED_FOLDER, options.folderPath ? options.folderPath : '');
+		const configuration: IWindowConfiguration = this.getConfiguration(options);
+
+		const mainWindow = this.instantiationService.createInstance(BrowserWindowEx, 'main');
+		mainWindow.load(configuration);
+		mainWindow.focus();
+		this.lifecycleService.registerWindow(mainWindow);
+		this.openedWindows.push(this.instantiationService.createInstance(WindowInstance, mainWindow, options.folderPath ? URI.file(options.folderPath) : null));
+		console.log('window instance, total: ', this.openedWindows.length);
+	}
+
+	private openResWindow(mainWindowId: number, options: IOpenBrowserWindowOptions): void {
+		const configuration: IWindowConfiguration = this.getConfiguration(options);
+		const instance = this.getWindowInstance(mainWindowId);
+		if (instance) {
+			instance.openResWindow(configuration);
+		}
+	}
+
+	private getConfiguration(options: IOpenBrowserWindowOptions): IWindowConfiguration {
 		const configuration: IWindowConfiguration = mixin({}, options.cli);
 		configuration.machineId = this.machineId;
 		configuration.appRoot = this.environmentService.appRoot;
 		configuration.execPath = process.execPath;
 		configuration.folderPath = options.folderPath;
+		configuration.file = options.file;
 
-		this.mainWindow = this.instantiationService.createInstance(BrowserWindowEx);
-		this.mainWindow.load(configuration);
-		this.lifecycleService.registerWindow(this.mainWindow);
+		return configuration;
 	}
+
+	private onWindowClosed(window: IBrowserWindowEx): void {
+		for (let i = 0; i < this.openedWindows.length; i++) {
+			const instance = this.openedWindows[i];
+			if(instance.resWindow === window){
+				instance.resWindow = null;
+				break;
+			}
+			if (instance.mainWindow === window) {
+				instance.closeRes();
+				this.openedWindows.splice(i, 1);
+				break;
+			}
+		}
+		console.log('window instance, total: ', this.openedWindows.length);
+	}
+
 	/**
 	 * 退出
 	 */
-	public quit(): void {
-		this.mainWindow.close();
+	public async quit(): Promise<void> {
+		for (let i = 0; i < this.openedWindows.length; i++) {
+			const instance = this.openedWindows[i];
+			await instance.close();
+		}
+		this.openedWindows = [];
 	}
 	/**
 	 * 选择文件打开
@@ -139,11 +280,11 @@ export class WindowsMainService implements IWindowsMainService {
 
 		if (!internalOptions.dialogOptions.title) {
 			if (pickFolders && pickFiles) {
-				internalOptions.dialogOptions.title = localize('windowsMainService.doPickAndOpen.open','Open');
+				internalOptions.dialogOptions.title = localize('windowsMainService.doPickAndOpen.open', 'Open');
 			} else if (pickFolders) {
-				internalOptions.dialogOptions.title = localize('windowsMainService.doPickAndOpen.openFolder','Open Folder');
+				internalOptions.dialogOptions.title = localize('windowsMainService.doPickAndOpen.openFolder', 'Open Folder');
 			} else {
-				internalOptions.dialogOptions.title = localize('windowsMainService.doPickAndOpen.openFile','Open File');
+				internalOptions.dialogOptions.title = localize('windowsMainService.doPickAndOpen.openFile', 'Open File');
 			}
 		}
 		this.dialogs.pickAndOpen(internalOptions);
@@ -170,23 +311,76 @@ export class WindowsMainService implements IWindowsMainService {
 	/**
 	 * 获得当前window
 	 */
-	public getFocusedWindow(): IBrowserWindowEx {
-		return this.mainWindow;
+	public getFocusedWindow(): IBrowserWindowEx | null {
+		for (let i = 0; i < this.openedWindows.length; i++) {
+			const instance = this.openedWindows[i];
+			if (instance.mainWindow.isFocus()) {
+				return instance.mainWindow;
+			}
+			if (instance.resWindow && instance.resWindow.isFocus()) {
+				return instance.resWindow;
+			}
+		}
+		return null;
 	}
 	/**
 	 * 根据ID得到窗体
 	 */
-	public getWindowById(id: number): IBrowserWindowEx {
-		if (this.mainWindow.id == id) {
-			return this.mainWindow;
+	public getWindowById(id: number): IBrowserWindowEx | null {
+		for (let i = 0; i < this.openedWindows.length; i++) {
+			const instance = this.openedWindows[i];
+			if (instance.mainWindow.id === id) {
+				return instance.mainWindow;
+			}
+			if (instance.resWindow && instance.resWindow.id === id) {
+				return instance.resWindow;
+			}
 		}
 		return null;
 	}
 	/**
 	 * 得到所有窗体
 	 */
-	public getAllWindows():IBrowserWindowEx[]{
-		return [this.mainWindow];
+	public getAllWindows(): IBrowserWindowEx[] {
+		let all: IBrowserWindowEx[] = [];
+		for (let i = 0; i < this.openedWindows.length; i++) {
+			const instance = this.openedWindows[i];
+			all.push(instance.mainWindow);
+			if (instance.resWindow) {
+				all.push(instance.resWindow);
+			}
+		}
+		return all;
+	}
+
+	private getEmptyWindowInstance(): WindowInstance | null {
+		for (let i = 0; i < this.openedWindows.length; i++) {
+			const instance = this.openedWindows[i];
+			if (!instance.openedFolderUri) {
+				return instance;
+			}
+		}
+		return null;
+	}
+
+	private getWindowInstance(openedFolderUri: URI): WindowInstance | null;
+	private getWindowInstance(mainWindowId: number): WindowInstance | null;
+	private getWindowInstance(value: any): WindowInstance | null {
+		for (let i = 0; i < this.openedWindows.length; i++) {
+			const instance = this.openedWindows[i];
+			if (typeof value === 'number') {
+				if (instance.mainWindow.id === value) {
+					return instance;
+				}
+			} else if (value instanceof URI) {
+				if (instance.openedFolderUri) {
+					if (isEqual(instance.openedFolderUri.fsPath, value.fsPath)) {
+						return instance;
+					}
+				}
+			}
+		}
+		return null;
 	}
 }
 
@@ -225,7 +419,7 @@ class Dialogs {
 				this.windowsMainService.open({
 					cli: this.environmentService.args,
 					folderPath: folderPath
-				});
+				}, options.windowId);
 			}
 		});
 	}
@@ -280,11 +474,8 @@ class Dialogs {
 		});
 	}
 
-	public showMessageBox(options: Electron.MessageBoxOptions, window: IBrowserWindowEx): Promise<IMessageBoxResult> {
-		return new Promise<IMessageBoxResult>((resolve, reject) => {
-			dialog.showMessageBox(window.win, options, (response: number, checkboxChecked: boolean) => {
-				resolve({ button: response, checkboxChecked });
-			});
-		});
+	public async showMessageBox(options: Electron.MessageBoxOptions, window: IBrowserWindowEx): Promise<IMessageBoxResult> {
+		const result = await dialog.showMessageBox(window.win, options);
+		return { button: result.response, checkboxChecked: result.checkboxChecked };
 	}
 }

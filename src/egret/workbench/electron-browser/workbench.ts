@@ -6,318 +6,46 @@ import { AssetsView } from 'egret/workbench/parts/assets/electron-browser/views/
 import { ComponentView } from 'egret/workbench/parts/components/electron-browser/views/componentView';
 import { LayerView } from 'egret/workbench/parts/layers/electron-browser/views/layerView';
 import { WorkbenchEditorService } from 'egret/workbench/services/editor/common/editorService';
-
 import { FileModelService } from 'egret/workbench/services/editor/common/modelServices';
 import { IFileModelService } from 'egret/workbench/services/editor/common/models';
 import { SyncDescriptor } from '../../platform/instantiation/common/descriptors';
-
 import { IFileService } from 'egret/platform/files/common/files';
 import { DefaultBoxLayoutTemplate } from './template';
 import { IWorkbenchEditorService } from '../services/editor/common/ediors';
 import { EditorPart } from 'egret/editor/common/parts/editorPart';
 import { Panel } from 'egret/parts/browser/panel';
-
 import { FileService } from '../services/files/fileServices';
 import { initExtensions } from 'egret/exts/extsInits';
 import { OutputView } from '../parts/output/browser/outputView';
-import { BaseEditor } from 'egret/editor/browser/baseEditor';
 import { AlignView } from '../parts/align/electron-browser/views/alignView';
 import { IDisposable, dispose } from 'egret/base/common/lifecycle';
 import { ILifecycleService } from 'egret/platform/lifecycle/common/lifecycle';
 import { IClipboardService } from 'egret/platform/clipboard/common/clipboardService';
 import { ClipboardService } from 'egret/platform/clipboard/electron-browser/clipboardService';
-
 import { IWorkspaceService } from 'egret/platform/workspace/common/workspace';
-import URI from '../../base/common/uri';
-import { remote } from 'electron';
-import { IStorageService, StorageScope } from '../../platform/storage/common/storage';
-import * as  electron from 'electron';
+import { IStorageService } from '../../platform/storage/common/storage';
 import { IFocusablePart, FocusablePartCommandHelper, KeybindingType } from '../../platform/operations/common/operations';
 import { RootCommands } from './commands/rootCommands';
-import { OpenFolderOperation, PromptAboutOperation, WingPropertyOperation, KeybindingSettingOperation, CheckUpdateOperation, FeedbackOperation, PrompQuickOpenOperation, CloseCurrentOperation } from './commands/rootOperations';
-
-const WINDOW_STATES = 'windowStates';
-
-import './media/workbench.css';
+import { OpenFolderOperation, PromptAboutOperation, WingPropertyOperation, KeybindingSettingOperation, CheckUpdateOperation, FeedbackOperation, PrompQuickOpenOperation, CloseCurrentOperation, ReportIssueOperation } from './commands/rootOperations';
 import { FileRootCommands } from '../parts/files/commands/fileRootCommands';
-import { NewExmlOperation, RevealFileInOsOperation, DeleteFileOperation, NewFolderOperation, CopyFilePathOperation, RenameFileOperation, SaveActiveOperation, SaveAllOperation } from '../parts/files/commands/fileRootOperations';
+import { NewExmlOperation, RevealFileInOsOperation, DeleteFileOperation, NewFolderOperation, CopyFilePathOperation, RenameFileOperation, SaveActiveOperation, SaveAllOperation, InstallShellCommandOperation } from '../parts/files/commands/fileRootOperations';
 import { IOperationBrowserService } from '../../platform/operations/common/operations-browser';
 import { SystemCommands } from 'egret/platform/operations/commands/systemCommands';
 import { PanelDom } from '../../parts/browser/panelDom';
 import { localize } from '../../base/localization/nls';
-import { checkUpdateFromLauncher } from 'egret/platform/launcher/common/launchers';
-import { IEditor } from 'egret/editor/core/editors';
+// import { checkUpdateFromLauncher } from 'egret/platform/launcher/common/launchers';
 import { PropertyView } from '../parts/properties/electron-browser/views/propertyView';
-import { addClass, removeClass } from 'egret/base/common/dom';
 import { initCodeService } from 'egret/exts/exml-exts/exml/common/server/codeService';
 import { AnimationView } from '../parts/animation/electron-browser/views/animationView';
 import { IAnimationService } from 'egret/workbench/parts/animation/common/animation';
 import { AnimationService } from 'egret/workbench/parts/animation/common/animationService';
-
-class EditorCreater {
-	constructor(
-		@IWorkbenchEditorService private editorService: IWorkbenchEditorService
-	) {
-	}
-
-	public createEditor(panelInfo: string): boxlayout.ITabPanel {
-		return <any>this.editorService.createEditor({ resource: URI.file(panelInfo) }) as boxlayout.ITabPanel;
-	}
-}
-
-class DocumentPanelSerialize implements boxlayout.IPanelSerialize {
-
-	private _editorCreater: EditorCreater;
-	public get editorCreater(): EditorCreater {
-		if (!this._editorCreater) {
-			this._editorCreater = this.instantiationService.createInstance(EditorCreater);
-		}
-		return this._editorCreater;
-	}
-	constructor(
-		@IInstantiationService private instantiationService: IInstantiationService) {
-	}
-	public serialize(ownerLayout: boxlayout.BoxLayout, panel: boxlayout.ITabPanel): string {
-		return panel.getId();
-	}
-	public unSerialize(ownerLayout: boxlayout.BoxLayout, panelInfo: string): boxlayout.ITabPanel {
-		return this.editorCreater.createEditor(panelInfo);
-	}
-}
-
-enum EditorMenuCommmands {
-	close = 'close',
-	closeOthers = 'closeOthers',
-	closeRight = 'closeRight',
-	closeAllSaved = 'closeAllSaved',
-	closeAll = 'closeAll',
-}
-
-class ClosableTitleRender extends boxlayout.DefaultTitleRender {
-
-	private menu: electron.Menu;
-	constructor(
-		@IWorkbenchEditorService private editorService: IWorkbenchEditorService
-	) {
-		super();
-		this.mouseDown_handler = this.mouseDown_handler.bind(this);
-		this.closeClick_handler = this.closeClick_handler.bind(this);
-		this.rootClick_handler = this.rootClick_handler.bind(this);
-
-		const closeBtn = document.createElement('div');
-		closeBtn.className = 'close-btn';
-		closeBtn.addEventListener('click', this.closeClick_handler);
-		this.root.appendChild(closeBtn);
-		this.initContextMenu();
-
-	}
-
-	private initContextMenu(): void {
-		this.menu = new remote.Menu();
-		this.addMenuItem(localize('editor.contextMenu.close', 'Close'), EditorMenuCommmands.close);
-		this.addMenuItem(localize('editor.contextMenu.closeOthers', 'Close Others'), EditorMenuCommmands.closeOthers);
-		this.addMenuItem(localize('editor.contextMenu.closeRight', 'Close to the Right'), EditorMenuCommmands.closeRight);
-		this.addMenuItem(localize('editor.contextMenu.closeAllSaved', 'Close Saved'), EditorMenuCommmands.closeAllSaved);
-		this.addMenuItem(localize('editor.contextMenu.closeAll', 'Close All'), EditorMenuCommmands.closeAll);
-
-		this.root.addEventListener('mousedown', this.mouseDown_handler);
-		this.root.addEventListener('mouseup', this.rootClick_handler);
-	}
-	private rootClick_handler(e: MouseEvent): void {
-		if (e.which === 2) {
-			this.closeSelf();
-		}
-		const isDoubleClick = (e.detail === 2);
-		if (isDoubleClick) {
-			const editor = this.panel as BaseEditor;
-			if (editor instanceof BaseEditor) {
-				editor.setPreview(false);
-			}
-			this.setPreivew(false);
-		}
-	}
-	private mouseDown_handler(e: MouseEvent): void {
-		if (e.button === 2) {
-			e.preventDefault();
-			e.stopImmediatePropagation();
-			e.stopPropagation();
-			this.displayContextMenu(e.pageX, e.pageY);
-		}
-	}
-
-	public updateDisplay(): void {
-		super.updateDisplay();
-		const editor = this.panel as BaseEditor;
-		if (editor instanceof BaseEditor) {
-			this.setPreivew(editor.isPreview);
-		}
-	}
-
-	private setPreivew(isPreview: boolean): void {
-		const children = this.root.getElementsByClassName('tabbar-item-title');
-		if (children.length > 0) {
-			const target = children[0] as HTMLElement;
-			if (isPreview) {
-				addClass(target, 'preview');
-			} else {
-				removeClass(target, 'preview');
-			}
-		}
-	}
-
-	/**
-	 * 显示上下文菜单
-	 * @param displayX 
-	 * @param displayY 
-	 */
-	private displayContextMenu(displayX: number, displayY: number): void {
-		setTimeout(() => {
-			this.menu.popup(remote.getCurrentWindow(), { x: displayX, y: displayY });
-		}, 20);
-	}
-
-	private addMenuItem(label: string, id: string): void {
-		const option: electron.MenuItemConstructorOptions = { label, id };
-		const item = this.createItem(option);
-		this.menu.append(item);
-	}
-	/**
-	 * 在上下文菜单中添加一个分割线
-	 */
-	private addMenuSeparator(): void {
-		const option: electron.MenuItemConstructorOptions = { type: 'separator' };
-		const item = new remote.MenuItem(option);
-		this.menu.append(item);
-	}
-
-	private createItem(option: electron.MenuItemConstructorOptions): electron.MenuItem {
-		option.click = (item, win) => {
-			this.menuItemClick_handler(option.id as EditorMenuCommmands);
-		};
-		const item = new remote.MenuItem(option);
-		return item;
-	}
-
-	private menuItemClick_handler(id: EditorMenuCommmands): void {
-		switch (id) {
-			case EditorMenuCommmands.close:
-				this.closeSelf();
-				break;
-			case EditorMenuCommmands.closeAll:
-				this.closeAll();
-				break;
-			case EditorMenuCommmands.closeAllSaved:
-				this.closeAllSaved();
-				break;
-			case EditorMenuCommmands.closeOthers:
-				this.closeOthers();
-				break;
-			case EditorMenuCommmands.closeRight:
-				this.closeRight();
-				break;
-			default:
-				break;
-		}
-	}
-
-	private closeClick_handler(e: MouseEvent): void {
-		this.closeSelf();
-	}
-
-	private closeSelf(): void {
-		const editor = this.panel as BaseEditor;
-		if (editor instanceof BaseEditor) {
-			this.editorService.closeEditor(editor);
-		}
-	}
-
-	private closeAll(): void {
-		let panels = this.panel.ownerGroup.panels;
-		panels = panels.concat();
-		this.closeEditors(<any>panels as IEditor[]);
-	}
-	private closeAllSaved(): void {
-		const panels = this.panel.ownerGroup.panels;
-		const editors: IEditor[] = [];
-		for (let i = 0; i < panels.length; i++) {
-			const editor = panels[i] as BaseEditor;
-			if (!editor.input.isDirty()) {
-				editors.push(editor);
-			}
-		}
-		this.closeEditors(editors);
-	}
-	private closeOthers(): void {
-		const panels = this.panel.ownerGroup.panels;
-		const curPanel = this.panel;
-		const editors: IEditor[] = [];
-		for (let i = 0; i < panels.length; i++) {
-			if (panels[i] != curPanel) {
-				editors.push(panels[i] as BaseEditor);
-			}
-		}
-		this.closeEditors(editors);
-	}
-	private closeRight(): void {
-		const panels = this.panel.ownerGroup.panels;
-		const curPanel = this.panel;
-		const editors: IEditor[] = [];
-		let started: boolean = false;
-		for (let i = 0; i < panels.length; i++) {
-			if (started) {
-				editors.push(panels[i] as BaseEditor);
-			}
-			if (panels[i] == curPanel) {
-				started = true;
-			}
-		}
-		this.closeEditors(editors);
-	}
-
-	private closeEditors(inputs: IEditor[]): void {
-		// var resources:URI[] = [];
-		// for(var i = 0;i<inputs.length;i++){
-		// 	resources.push(inputs[i].input.getResource());
-		// }
-		this.editorService.closeEditors(inputs);
-		// this.fileModelService.confirmSave(resources).then(result=>{
-		// 	if(result == ConfirmResult.SAVE){
-		// 		this.fileModelService.saveAll(resources).then(results=>{
-		// 			if (!results.some(r => !r.success)) {//没有保存失败的内容
-		// 				this.editorService.closeEditors(inputs);
-		// 			}else{
-		// 				var fails:URI[] = [];
-		// 				for(var i = 0;i<results.length;i++){
-		// 					var result = results[i];
-		// 					if(!result.success){
-		// 						fails.push(result.source);
-		// 					}
-		// 				}
-		// 				var message = '';
-		// 				if (fails.length == 1) {
-		// 					message = localize('editor.contextMenu.saveError','Save the changes made to file {0} fail.',paths.basename(fails[0].fsPath));
-		// 				} else {
-		// 					message = getConfirmMessage(localize('editor.contextMenu.saveErrors','Save the changes made to the following {0} files fail.',fails.length), fails);
-		// 				}
-		// 				this.notificationService.error({content:message});
-		// 			}
-		// 		});
-		// 	}else if(result == ConfirmResult.DONT_SAVE){
-		// 		this.editorService.closeEditors(inputs);
-		// 	}
-		// });
-	}
-}
-
-
-class ClosableTitleRenderFactory implements boxlayout.ITitleRenderFactory {
-	constructor(@IInstantiationService private instantiationService: IInstantiationService) {
-	}
-
-	public createTitleRender(): boxlayout.ITitleRender {
-		return this.instantiationService.createInstance(ClosableTitleRender);
-	}
-}
+import { ClosableTitleRenderFactory, DocumentPanelSerialize } from './boxlayoutRender';
+import { ipcRenderer } from 'electron';
+import { IWindowClientService } from 'egret/platform/windows/common/window';
+import './media/workbench.css';
+import { IExplorerService } from '../parts/files/common/explorer';
+import URI from 'egret/base/common/uri';
+import * as paths from 'egret/base/common/paths';
 
 /**
  * 工作台
@@ -342,6 +70,7 @@ export class Workbench implements IFocusablePart {
 		@IInstantiationService private instantiationService: IInstantiationService,
 		@ILifecycleService private lifecycleService: ILifecycleService,
 		@IStorageService private storageService: IStorageService,
+		@IWindowClientService private windowService: IWindowClientService,
 		@IOperationBrowserService private operationService: IOperationBrowserService
 	) {
 		this.parent = parent;
@@ -351,6 +80,7 @@ export class Workbench implements IFocusablePart {
 
 		this.toDispose = [];
 
+		boxlayout.HtmlElementResizeHelper.UseNative = true;
 		this.boxContainer = new boxlayout.BoxLayout();
 		const titleRenderFactory = this.instantiationService.createInstance(ClosableTitleRenderFactory);
 		this.boxContainer.init(this.parent,
@@ -364,14 +94,49 @@ export class Workbench implements IFocusablePart {
 
 		this.workspaceService.registerBoxlayout(this.boxContainer);
 		this.focusablePartCommandHelper = this.instantiationService.createInstance(FocusablePartCommandHelper);
-		this.restoreWindowState();
 		this.initCommands();
+		ipcRenderer.on('egret:openFile', this.onOpenEditorHandler);
 	}
+
+	private onOpenEditorHandler = (event: Electron.IpcRendererEvent, data: any): void => {
+		if (!data) {
+			return;
+		}
+		if (!this.editorService) {
+			return;
+		}
+		this.instantiationService.invokeFunction(async (accessor) => {
+			const service = accessor.get(IExplorerService);
+			if (service) {
+				try {
+					const target = URI.file(data);
+					await service.select(target, true);
+					const selections = service.getFileSelection();
+					for (let i = 0; i < selections.length; i++) {
+						const element = selections[i];
+						if (paths.isEqual(element.resource.toString(), target.toString())) {
+							const extname = paths.extname(target.fsPath);
+							if (extname === '.json') {
+								this.editorService.openResEditor(target);
+							} else {
+								this.editorService.openEditor({ resource: target }, false);
+							}
+							break;
+						}
+					}
+				} catch (error) {
+					console.log('open file error', error);
+				}
+			}
+		});
+	}
+
 	/** 注册当前编辑器可以执行的命令 */
 	private initCommands(): void {
 		//普通根命令
 		this.focusablePartCommandHelper.registerCommand(RootCommands.OPEN_FOLDER, OpenFolderOperation);
 		this.focusablePartCommandHelper.registerCommand(RootCommands.PROMPT_ABOUT, PromptAboutOperation);
+		this.focusablePartCommandHelper.registerCommand(RootCommands.REPORT, ReportIssueOperation);
 		this.focusablePartCommandHelper.registerCommand(RootCommands.PROMPT_QUICK_OPEN, PrompQuickOpenOperation);
 		this.focusablePartCommandHelper.registerCommand(RootCommands.CHECK_UPDATE, CheckUpdateOperation);
 		this.focusablePartCommandHelper.registerCommand(RootCommands.FEEDBACK, FeedbackOperation);
@@ -391,6 +156,7 @@ export class Workbench implements IFocusablePart {
 		this.focusablePartCommandHelper.registerCommand(FileRootCommands.RENAME_FILE, RenameFileOperation);
 		this.focusablePartCommandHelper.registerCommand(FileRootCommands.SAVE_ACTIVE, SaveActiveOperation);
 		this.focusablePartCommandHelper.registerCommand(FileRootCommands.SAVE_ALL, SaveAllOperation);
+		this.focusablePartCommandHelper.registerCommand(FileRootCommands.INSTALL_SHELL_COMMAND, InstallShellCommandOperation);
 
 		this.operationService.registerFocusablePart(this);
 		//系统根命令
@@ -470,13 +236,14 @@ export class Workbench implements IFocusablePart {
 	 */
 	public startup(): void {
 		this.initServices();
-		checkUpdateFromLauncher();
+		// checkUpdateFromLauncher();
 
 		initExtensions(this.instantiationService);
 		initCodeService(this.instantiationService);
 		this.initParts();
 		this.restoreLayout();
 		this.registerListeners();
+		ipcRenderer.send('egret:workbenchReady', this.windowService.getCurrentWindowId());
 	}
 
 	/**
@@ -524,65 +291,11 @@ export class Workbench implements IFocusablePart {
 	}
 
 	private shutdown(): void {
-		this.storeWindowState();
 		this.shutdownPanels();
 	}
 	private storeLayoutState(): void {
 		//TODO 存储布局状态，需要杨宁的支持
 	}
-	private storeWindowState(): void {
-		const window = remote.getCurrentWindow();
-		const bounds = window.getBounds();
-		const isMaximized = window.isMaximized;
-		const config = { bounds, isMaximized };
-		const configStr = JSON.stringify(config);
-		this.storageService.store(WINDOW_STATES, configStr, StorageScope.WORKSPACE);
-	}
-	private restoreWindowState(): void {
-		const displays = electron.screen.getAllDisplays();
-		const layoutConfigStr = this.storageService.get(WINDOW_STATES, StorageScope.WORKSPACE);
-		let layoutConfig = null;
-		if (layoutConfigStr) {
-			layoutConfig = JSON.parse(layoutConfigStr);
-		}
-		if (!layoutConfig) {
-			return;
-		}
-		let boundsState = layoutConfig.bounds;
-		const isMaximized = layoutConfig.isMaximized;
-
-		let isInScreen = false;
-		const offsetW: number = 40;
-		const offsetH: number = 40;
-		for (let i = 0; i < displays.length; i++) {
-			var curDisplay = displays[i].bounds;
-			if (
-				boundsState.x + boundsState.width - offsetW >= curDisplay.x &&
-				boundsState.y + boundsState.height - offsetH >= curDisplay.y &&
-				boundsState.x + offsetW <= curDisplay.x + curDisplay.width &&
-				boundsState.y + offsetH <= curDisplay.y + curDisplay.height
-			) {
-				isInScreen = true;
-				break;
-			}
-		}
-		if (!isInScreen) {
-			curDisplay = displays[0].bounds;
-			boundsState = {
-				x: curDisplay.x + 20,
-				y: curDisplay.y + 20,
-				width: curDisplay.x + curDisplay.width - 40,
-				height: curDisplay.y + curDisplay.height - 40
-			};
-		}
-		const window = remote.getCurrentWindow();
-		window.setBounds(boundsState, true);
-		if (isMaximized) {
-			window.maximize();
-		}
-	}
-
-
 
 	private shutdownPanels(): void {
 		this.editorPart.shutdown();

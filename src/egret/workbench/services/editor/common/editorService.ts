@@ -8,6 +8,9 @@ import { EditorInput } from 'egret/editor/common/input/editorInput';
 import { basename } from 'egret/base/common/paths';
 import { FileInputRegistry } from 'egret/editor/inputRegistry';
 import { once, Emitter, Event } from 'egret/base/common/event';
+import { ipcRenderer } from 'electron';
+import { IWorkspaceService } from 'egret/platform/workspace/common/workspace';
+import { IWindowClientService } from 'egret/platform/windows/common/window';
 
 
 /**
@@ -23,6 +26,8 @@ export class WorkbenchEditorService implements IWorkbenchEditorService {
 	private _onActiveEditorChanged: Emitter<IEditor>;
 	public constructor(
 		editorPart: IEditorPart,
+		@IWorkspaceService private workspaceService: IWorkspaceService,
+		@IWindowClientService private windowService: IWindowClientService,
 		@IInstantiationService private instantiationService: IInstantiationService
 	) {
 		this.editorPart = editorPart;
@@ -66,20 +71,31 @@ export class WorkbenchEditorService implements IWorkbenchEditorService {
 	public getOpenEditors(): IEditor[] {
 		return this.editorPart.getOpenEditors();
 	}
-
+	/**
+	 * 打开res编辑器
+	 * @param file 
+	 */
+	public openResEditor(file: URI): Promise<void> {
+		ipcRenderer.send('egret:openResWindow', {
+			windowId: this.windowService.getCurrentWindowId(),
+			folderPath: this.workspaceService.getWorkspace().uri.fsPath,
+			file: file.fsPath
+		});
+		return Promise.resolve();
+	}
 	/**
 	 * 通过输入流打开一个编辑器，如果已经打开了这个编辑器则激活
 	 * @param input 输入流
 	 * @param isPreview
 	 */
-	public openEditor(input: IEditorInput | IResourceInput, isPreview: boolean = false): Promise<IEditor> {
+	public openEditor(input: IEditorInput | IResourceInput, isPreview: boolean = false, instantiationService?: IInstantiationService): Promise<IEditor> {
 		if (!input) {
 			return Promise.resolve(null);
 		}
 
-		const editorInput = this.createInput(input);
+		const editorInput = this.createInput(input, instantiationService);
 		if (editorInput) {
-			return this.doOpenEditor(editorInput, isPreview);
+			return this.doOpenEditor(editorInput, isPreview, instantiationService);
 		}
 		return Promise.resolve(null);
 	}
@@ -87,20 +103,23 @@ export class WorkbenchEditorService implements IWorkbenchEditorService {
 	 * 打开编辑器
 	 * @param input 
 	 */
-	public createEditor(input: IEditorInput | IResourceInput, isPreview: boolean = false): IEditor {
+	public createEditor(input: IEditorInput | IResourceInput, isPreview: boolean = false, instantiationService?: IInstantiationService): IEditor {
 		if (!input) {
 			return null;
 		}
-		const editorInput = this.createInput(input);
-		const editor = this.editorPart.createEditor(editorInput);
+		const editorInput = this.createInput(input, instantiationService);
+		if(!editorInput){
+			return null;
+		}
+		const editor = this.editorPart.createEditor(editorInput, false, instantiationService);
 		if (editor) {
 			this._onActiveEditorChanged.fire(editor);
 		}
 		return editor;
 	}
 
-	protected doOpenEditor(input: IEditorInput, isPreview: boolean = false): Promise<IEditor> {
-		return this.editorPart.openEditor(input, isPreview).then(editor => {
+	protected doOpenEditor(input: IEditorInput, isPreview: boolean = false, instantiationService?: IInstantiationService): Promise<IEditor> {
+		return this.editorPart.openEditor(input, isPreview, instantiationService).then(editor => {
 			this._onActiveEditorChanged.fire(editor);
 			return editor;
 		});
@@ -139,7 +158,7 @@ export class WorkbenchEditorService implements IWorkbenchEditorService {
 	 * 创建一个输入流
 	 * @param input 
 	 */
-	public createInput(input: any): IEditorInput {
+	public createInput(input: any, instantiationService?: IInstantiationService): IEditorInput {
 		if (!input) {
 			return null;
 		}
@@ -152,19 +171,22 @@ export class WorkbenchEditorService implements IWorkbenchEditorService {
 			if (!title) {
 				title = basename(resourceInput.resource.fsPath);
 			}
-			return this.createOrGet(resourceInput.resource, title, resourceInput.description, resourceInput.encoding);
+			return this.createOrGet(resourceInput.resource, title, resourceInput.description, resourceInput.encoding, instantiationService);
 		}
 		return null;
 	}
 
 
-	private createOrGet(resource: URI, title: string, description: string, encoding?: string): IEditorInput {
+	private createOrGet(resource: URI, title: string, description: string, encoding?: string, instantiationService?: IInstantiationService): IEditorInput {
 		if (WorkbenchEditorService.CACHE.has(resource)) {
 			const input = WorkbenchEditorService.CACHE.get(resource);
 			return input;
 		}
 		var encoding: string = encoding ? encoding : 'utf8';
-		const editorInput: IEditorInput = FileInputRegistry.getFileInput(resource, encoding, this.instantiationService);
+		const editorInput: IEditorInput = FileInputRegistry.getFileInput(resource, encoding, instantiationService ?? this.instantiationService);
+		if(!editorInput){
+			return null;
+		}
 		WorkbenchEditorService.CACHE.set(editorInput.getResource(), editorInput);
 		once(editorInput.onDispose)(() => {
 			WorkbenchEditorService.CACHE.delete(resource);
