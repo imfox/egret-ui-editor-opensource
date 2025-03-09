@@ -127,23 +127,35 @@ export function versions(reload: boolean = false): Promise<VersionInfo[]> {
 		versionsPromise = new Promise<VersionInfo[]>((resolve, reject) => {
 			exec('egret versions').then(data => {
 				const versionInfos: VersionInfo[] = [];
-				if (data) {
-					const versions: string[] = data.split('\n');
-					for (let i = 0; i < versions.length; i++) {
-						const versionStr: string = versions[i];
-						const tempArr: string[] = versionStr.split(' ');
-						//前2位为Egret Engine 并不需要
-						tempArr.splice(0, 2);
-						const version: string = tempArr.shift();
-						//后续为地址数组, 不直接取后一位 为避免地址中存在空格
-						const versionPath: string = tempArr.join(' ');
-						let path: string = ltrim(versionPath);
-						path = path.split('\\').join('/');
-						if (path.charAt(path.length - 1) != '/') {
-							path += '/';
-						}
-						versionInfos.push({ version: version, path: path });
+				// if (data) {
+				// 	console.log()
+				// 	const versions: string[] = data.split('\n');
+				// 	for (let i = 0; i < versions.length; i++) {
+				// 		const versionStr: string = versions[i];
+				// 		const tempArr: string[] = versionStr.split(' ');
+				// 		//前2位为Egret Engine 并不需要
+				// 		tempArr.splice(0, 2);
+				// 		const version: string = tempArr.shift();
+				// 		//后续为地址数组, 不直接取后一位 为避免地址中存在空格
+				// 		const versionPath: string = tempArr.join(' ');
+				// 		let path: string = ltrim(versionPath);
+				// 		path = path.split('\\').join('/');
+				// 		if (path.charAt(path.length - 1) != '/') {
+				// 			path += '/';
+				// 		}
+				// 		versionInfos.push({ version: version, path: path });
+				// 	}
+				// }
+				{	// 不在使用白鹭的引擎, 改为使用自己魔改
+					let path = pathUtil.join(process.cwd(), "version", "6.0.0");
+					path = path.split('\\').join('/');
+					if (path.charAt(path.length - 1) != '/') {
+						path += '/';
 					}
+					versionInfos.push({
+						version:"6.0.0",
+						path: path,
+					});
 				}
 				if (versionInfos.length > 0) {
 					versionCaches = versionInfos;
