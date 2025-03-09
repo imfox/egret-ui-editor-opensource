@@ -1723,6 +1723,10 @@
 		"s": "Disable:",
 		"t": "禁用:"
 	},
+	"property.style.buttonSkin.hover": {
+		"s": "Hover:",
+		"t": "点亮:"
+	},
 	"property.style.buttonSkin.down": {
 		"s": "Press Down:",
 		"t": "按下:"

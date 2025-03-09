@@ -39,7 +39,7 @@ export class ButtonSkinPart extends BasePart {
 
 				const skinProperty = node.getProperty('skinName');
 				const classValue: IClass = skinProperty as any;
-				if (classValue && isInstanceof(classValue,'eui.IClass') && classValue.getIsInner()) {
+				if (classValue && isInstanceof(classValue, 'eui.IClass') && classValue.getIsInner()) {
 					const buttonXML = classValue.getClassXML();
 					if (buttonXML.children.length > 0) {
 						const imageXML = buttonXML.children[0];
@@ -53,7 +53,10 @@ export class ButtonSkinPart extends BasePart {
 							if (source) {
 								this.upInput.text = source;
 							}
-
+							source = imageXML.attributes['source.hover'];
+							if (source) {
+								this.hoverInput.text = source;
+							}
 							source = imageXML.attributes['source.down'];
 							if (source) {
 								this.downInput.text = source;
@@ -71,6 +74,7 @@ export class ButtonSkinPart extends BasePart {
 	}
 
 	private upInput = new TextInput();
+	private hoverInput = new TextInput();
 	private downInput = new TextInput();
 	private disableInput = new TextInput();
 
@@ -94,6 +98,12 @@ export class ButtonSkinPart extends BasePart {
 		this.initAttributeStyle(attribute);
 
 		var attribute = new AttributeItemGroup(container);
+		attribute.label = localize('property.style.buttonSkin.hover', 'Hover:');
+		this.hoverInput.create(attribute);
+		this.toDisposes.push(this.hoverInput.onValueChanged(e => this.hoverChanged_handler(e)));
+		this.initAttributeStyle(attribute);
+
+		var attribute = new AttributeItemGroup(container);
 		attribute.label = localize('property.style.buttonSkin.down', 'Press Down:');
 		this.downInput.create(attribute);
 		this.toDisposes.push(this.downInput.onValueChanged(e => this.downChanged_handler(e)));
@@ -112,27 +122,30 @@ export class ButtonSkinPart extends BasePart {
 		addClass(attribute.getItemElement(), 'property-attribute-item');
 	}
 
-
+	private hoverChanged_handler(value: string): void {
+		this.updateButtonSkinExml(this.upInput.text, this.hoverInput.text, this.downInput.text, this.disableInput.text);
+	}
 	private upChanged_handler(value: string): void {
-		this.updateButtonSkinExml(this.upInput.text, this.downInput.text, this.disableInput.text);
+		this.updateButtonSkinExml(this.upInput.text, this.hoverInput.text, this.downInput.text, this.disableInput.text);
 	}
 	private downChanged_handler(value: string): void {
-		this.updateButtonSkinExml(this.upInput.text, this.downInput.text, this.disableInput.text);
+		this.updateButtonSkinExml(this.upInput.text, this.hoverInput.text, this.downInput.text, this.disableInput.text);
 	}
 	private disableChanged_handler(value: string): void {
-		this.updateButtonSkinExml(this.upInput.text, this.downInput.text, this.disableInput.text);
+		this.updateButtonSkinExml(this.upInput.text, this.hoverInput.text, this.downInput.text, this.disableInput.text);
 	}
 
 
 	/**刷新按钮的皮肤展现
 	 * upv:弹起状态资源名，downv:按下状态资源名，disabeldv:禁用状态资源名
 	*/
-	public updateButtonSkinExml(upv: string, downv: string, disabledv: string): void {
+	public updateButtonSkinExml(upv: string, hoverv: string, downv: string, disabledv: string): void {
 		if (!this.currentNode) {
 			return;
 		}
 		const up = upv;
 		const down = downv;
+		const hover = hoverv;
 		const disabled = disabledv;
 
 		let oldLabel;
@@ -155,7 +168,7 @@ export class ButtonSkinPart extends BasePart {
 			return;
 		}
 
-		const xmlTag = parse('<e:Skin xmlns:e = \'' + EUI.uri + '\' states= \'up,down,disabled\' > </e:Skin>');
+		const xmlTag = parse('<e:Skin xmlns:e = \'' + EUI.uri + '\' states= \'up,hover,down,disabled\' > </e:Skin>');
 		const image = parse('<e:Image xmlns:e= \'' + EUI.uri + '\'  width=\'100%\' height=\'100%\'/>');
 
 		if (up) {
@@ -166,6 +179,10 @@ export class ButtonSkinPart extends BasePart {
 		if (down) {
 			setAttribute(image, 'source.down', down);
 			image.attributes['source.down'] = down;
+		}
+		if (hover) {
+			setAttribute(image, 'source.hover', hover);
+			image.attributes['source.hover'] = hover;
 		}
 		if (disabled) {
 			setAttribute(image, 'source.disabled', disabled);
