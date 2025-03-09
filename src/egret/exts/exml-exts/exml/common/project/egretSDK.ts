@@ -3,6 +3,7 @@ import { ltrim } from 'egret/base/common/strings';
 import * as pathUtil from 'path';
 import { trim, trimLeft } from '../utils/strings';
 import { localize } from 'egret/base/localization/nls';
+import { FileUtil } from 'egret/exts/resdepot/common/utils/FileUtil';
 
 /**
  * 引擎版本信息
@@ -125,7 +126,7 @@ export function versions(reload: boolean = false): Promise<VersionInfo[]> {
 	versionCaches = null;
 	if (!versionsPromise) {
 		versionsPromise = new Promise<VersionInfo[]>((resolve, reject) => {
-			exec('egret versions').then(data => {
+			// exec('egret versions').then(data => {
 				const versionInfos: VersionInfo[] = [];
 				// if (data) {
 				// 	console.log()
@@ -146,14 +147,16 @@ export function versions(reload: boolean = false): Promise<VersionInfo[]> {
 				// 		versionInfos.push({ version: version, path: path });
 				// 	}
 				// }
-				{	// 不在使用白鹭的引擎, 改为使用自己魔改
-					let path = pathUtil.join(process.cwd(), "version", "6.0.0");
+					// 不在使用白鹭的引擎, 改为使用自己魔改
+			FileUtil.getFilesInDir(pathUtil.join(process.cwd(), "version"), /^(\d+\.\d+\.\d+)$/).then((data) => {
+				for(let version of data){
+					let path = pathUtil.join(process.cwd(), "version", version);
 					path = path.split('\\').join('/');
 					if (path.charAt(path.length - 1) != '/') {
 						path += '/';
 					}
 					versionInfos.push({
-						version:"6.0.0",
+						version: version,
 						path: path,
 					});
 				}
