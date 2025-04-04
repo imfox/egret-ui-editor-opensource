@@ -2,6 +2,10 @@
 
 
 ## 简介
+项目基于nodejs14版本, 过低过高可能都会有问题, 可以在运行前执行环境设置指令
+```
+$env:Path = "C:\soft\nodejs_list\node-v14.21.3-win-x64;" + $env:Path
+```
 
 Egret UI Editor是一款独立的UI编辑器，其主要功能是针对 `Egret` 项目中的 `Exml` 皮肤文件进行可视化编辑。
 
