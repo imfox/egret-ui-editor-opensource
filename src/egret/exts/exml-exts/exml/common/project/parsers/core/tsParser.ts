@@ -191,6 +191,9 @@ export class TsParser implements IDisposable {
 					} catch (error) {
 						return undefined;
 					}
+					if(!(content.indexOf(" extends eui.") >= 0 || content.indexOf(" extends egret.") >= 0)) { // 不是继承白鹭的类, 不需要管理
+						return undefined;
+					}
 					return ts.ScriptSnapshot.fromString(content);
 				},
 				getCurrentDirectory: () => process.cwd(),
